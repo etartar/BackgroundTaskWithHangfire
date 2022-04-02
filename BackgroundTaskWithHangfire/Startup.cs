@@ -1,4 +1,5 @@
 using BackgroundTaskWithHangfire.Contexts;
+using BackgroundTaskWithHangfire.CustomStates;
 using BackgroundTaskWithHangfire.Extensions;
 using BackgroundTaskWithHangfire.Jobs;
 using BackgroundTaskWithHangfire.Services;
@@ -40,11 +41,20 @@ namespace BackgroundTaskWithHangfire
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "BackgroundTaskWithHangfire", Version = "v1" });
             });
             services.AddDbContext<EmployeeDbContext>(x => x.UseSqlServer(Configuration.GetConnectionString("EmployeeDbConnection")));
-            
-            services.AddHangfire(x => x.UseSqlServerStorage(Configuration.GetConnectionString("EmployeeDbConnection")));
+
+            GlobalConfiguration.Configuration.UseFilter(new WaitingAckStateFilter());
+            GlobalStateHandlers.Handlers.Add(new WaitingAckState.Handler());
+            GlobalJobFilters.Filters.Add(new AutomaticRetryAttribute { Attempts = 5 });
+
+            services.AddHangfire((provider, configuration) =>
+            {
+                configuration.UseFilter(provider.GetRequiredService<AutomaticRetryAttribute>());
+                configuration.UseSqlServerStorage(Configuration.GetConnectionString("EmployeeDbConnection"));
+            });
             GlobalConfiguration.Configuration.UseSqlServerStorage(Configuration.GetConnectionString("EmployeeDbConnection")).WithJobExpirationTimeout(TimeSpan.FromDays(7));
 
-            services.AddJobManager().AddCustomRecurringJob<TestJob>();
+            services.AddHangfireServer();
+            //services.AddJobManager().AddCustomRecurringJob<TestJob>();
 
             services.AddScoped<IEmployeeService, EmployeeService>();
         }
