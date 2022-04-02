@@ -1,7 +1,14 @@
+using BackgroundTaskWithHangfire.Contexts;
+using BackgroundTaskWithHangfire.Extensions;
+using BackgroundTaskWithHangfire.Jobs;
+using BackgroundTaskWithHangfire.Services;
+using Hangfire;
+using HangfireBasicAuthenticationFilter;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -32,6 +39,14 @@ namespace BackgroundTaskWithHangfire
             {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "BackgroundTaskWithHangfire", Version = "v1" });
             });
+            services.AddDbContext<EmployeeDbContext>(x => x.UseSqlServer(Configuration.GetConnectionString("EmployeeDbConnection")));
+            
+            services.AddHangfire(x => x.UseSqlServerStorage(Configuration.GetConnectionString("EmployeeDbConnection")));
+            GlobalConfiguration.Configuration.UseSqlServerStorage(Configuration.GetConnectionString("EmployeeDbConnection")).WithJobExpirationTimeout(TimeSpan.FromDays(7));
+
+            services.AddJobManager().AddCustomRecurringJob<TestJob>();
+
+            services.AddScoped<IEmployeeService, EmployeeService>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -49,6 +64,26 @@ namespace BackgroundTaskWithHangfire
             app.UseRouting();
 
             app.UseAuthorization();
+
+            #region [Configure Hangfire]
+            app.UseHangfireDashboard("/hangfire", new DashboardOptions()
+            {
+                AppPath = null,
+                DashboardTitle = "Hangfire Dashboard",
+                Authorization = new[]
+                {
+                    new HangfireCustomBasicAuthenticationFilter
+                    {
+                        User = Configuration.GetSection("HangfireCredentials:UserName").Value,
+                        Pass = Configuration.GetSection("HangfireCredentials:Password").Value
+                    }
+                }
+            });
+
+            //app.StartRecurringJobs();
+
+            app.UseHangfireJobs();
+            #endregion
 
             app.UseEndpoints(endpoints =>
             {
